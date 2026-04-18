@@ -458,12 +458,13 @@ const btnDash = document.getElementById("btnDash");
 
 function resize(){
   const vv = window.visualViewport;
-  const w = Math.max(320, Math.floor(vv ? vv.width : window.innerWidth));
-  const h = Math.max(320, Math.floor(vv ? vv.height : window.innerHeight));
-  canvas.width = w;
-  canvas.height = h;
-  canvas.style.width = w + "px";
-  canvas.style.height = h + "px";
+  const cssW = Math.max(320, Math.floor(vv ? vv.width : window.innerWidth));
+  const cssH = Math.max(320, Math.floor(vv ? vv.height : window.innerHeight));
+  const scale = getRenderScale();
+  canvas.width = Math.max(320, Math.floor(cssW * scale));
+  canvas.height = Math.max(320, Math.floor(cssH * scale));
+  canvas.style.width = cssW + "px";
+  canvas.style.height = cssH + "px";
 }
 addEventListener("resize", resize);
 addEventListener("orientationchange", ()=>setTimeout(resize, 120));
@@ -484,6 +485,24 @@ function aabb(a,b){
 function nowMs(){ return performance.now(); }
 function randChoice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 function easeOutCubic(t){ return 1 - Math.pow(1-t,3); }
+
+const DEVICE_MEMORY_GB = Number(navigator.deviceMemory || 0);
+const CPU_THREADS = Number(navigator.hardwareConcurrency || 0);
+const AUTO_LOW_END = (
+  window.innerWidth <= 900 ||
+  (DEVICE_MEMORY_GB > 0 && DEVICE_MEMORY_GB <= 4) ||
+  (CPU_THREADS > 0 && CPU_THREADS <= 4)
+);
+
+function getRenderScale(){
+  if (AUTO_LOW_END) return 0.7;
+  if (window.innerWidth <= 1200) return 0.85;
+  return 1;
+}
+
+function lowGraphicsOn(){
+  return !!settings.low || AUTO_LOW_END;
+}
 
 // tiny SFX
 const SFX = (() => {
@@ -541,6 +560,10 @@ let settings = { volume:0.45, particles:0.65, low:false, joySens:1.0, twoPlayer:
 
 function loadSettings(){
   try{ const s = JSON.parse(localStorage.getItem(SET_KEY)||"null"); if(s) settings={...settings,...s}; }catch{}
+  if(AUTO_LOW_END){
+    settings.low = true;
+    settings.particles = Math.min(settings.particles, 0.22);
+  }
   setVol.value = settings.volume;
   setParticles.value = settings.particles;
   setLow.checked = !!settings.low;
@@ -1387,8 +1410,8 @@ function buildMap(name){
     addSafePad(2550, floor-740);
   }
 
-  const starCount = settings.low ? 120 : 240;
-  const crystalCount = settings.low ? 14 : 26;
+  const starCount = lowGraphicsOn() ? 40 : 140;
+  const crystalCount = lowGraphicsOn() ? 8 : 18;
   for(let i=0;i<crystalCount;i++){
     deco.push({ type:"crystal", x:120+Math.random()*(world.w-240), y:floor-(60+Math.random()*720), s:0.9+Math.random()*1.6, phase:Math.random()*10 });
   }
@@ -1431,17 +1454,19 @@ function applyCam(){
 
 function spawnBurst(x,y,n,color){
   if(Math.random() > settings.particles) return;
-  const mult = settings.low ? 0.55 : 1.0;
+  const mult = lowGraphicsOn() ? 0.25 : 0.7;
   n = Math.max(1, Math.floor(n*mult));
+  if(particles.length > 60) return;
   for(let i=0;i<n;i++){
-    particles.push({ x,y, vx:(Math.random()-0.5)*7, vy:(Math.random()-0.5)*7, life:30+Math.random()*20, size:3, color });
+    particles.push({ x,y, vx:(Math.random()-0.5)*5, vy:(Math.random()-0.5)*5, life:14+Math.random()*10, size:2, color });
   }
 }
 function spawnTrail(ent,color){
-  if(settings.low) return;
+  if(lowGraphicsOn()) return;
   if(Math.random() > settings.particles) return;
-  if(Math.random() < 0.92) return;
-  particles.push({ x:ent.x+ent.w/2, y:ent.y+ent.h*0.78, vx:(Math.random()-0.5)*0.8, vy:0.8+Math.random()*1.2, life:10+Math.random()*6, size:2, color });
+  if(Math.random() < 0.97) return;
+  if(particles.length > 60) return;
+  particles.push({ x:ent.x+ent.w/2, y:ent.y+ent.h*0.78, vx:(Math.random()-0.5)*0.55, vy:0.5+Math.random()*0.9, life:8+Math.random()*4, size:2, color });
 }
 </script>
 
@@ -2906,7 +2931,7 @@ function loop(){
     updateTagZone(dt);
 
     // spawn occasional powerups
-    if(Math.random() < dt*0.03 && powerups.length < (settings.low?1:2)) spawnPowerup();
+    if(Math.random() < dt*0.012 && powerups.length < 1) spawnPowerup();
 
     // update entities input/ai
     for(let i=0;i<entities.length;i++){
@@ -3408,7 +3433,7 @@ btnProfile.addEventListener("click", ()=>{ refreshProfileUI(); });
     updateHazards(dt);
     applySlowAuras(dt);
     updateTagZone(dt);
-    if(Math.random() < dt*0.03 && powerups.length < (settings.low?1:2)) spawnPowerup();
+    if(Math.random() < dt*0.012 && powerups.length < 1) spawnPowerup();
 
     for(let i=0;i<entities.length;i++){
       const e=entities[i];
@@ -3445,7 +3470,7 @@ btnProfile.addEventListener("click", ()=>{ refreshProfileUI(); });
       physicsStep(e, dt);
       e.t += dt;
     }
-    if(particles.length > 120) particles.length = 120;
+    if(particles.length > 60) particles.length = 60;
     for(let i=particles.length-1;i>=0;i--){
       const p=particles[i]; p.x += p.vx; p.y += p.vy; p.vx *= 0.96; p.vy *= 0.96; p.life -= 1; if(p.life<=0) particles.splice(i,1);
     }
@@ -3485,7 +3510,7 @@ btnProfile.addEventListener("click", ()=>{ refreshProfileUI(); });
     updateCamera();
 
     online.snapshotTimer += dt;
-    if(online.snapshotTimer >= 1/15){
+    if(online.snapshotTimer >= 1/12){
       online.snapshotTimer = 0;
       sendOnline({type:'snapshot', snapshot: serializeState()});
     }
@@ -3535,7 +3560,7 @@ btnProfile.addEventListener("click", ()=>{ refreshProfileUI(); });
     }else if(state.mode==='playing' && !state.paused){
       // original offline sim
       updateHazards(dt); applySlowAuras(dt); updateTagZone(dt);
-      if(Math.random() < dt*0.03 && powerups.length < (settings.low?1:2)) spawnPowerup();
+      if(Math.random() < dt*0.012 && powerups.length < 1) spawnPowerup();
       for(let i=0;i<entities.length;i++){
         const e=entities[i]; e.speedBuff=Math.max(0,e.speedBuff-dt); e.jumpBuff=Math.max(0,e.jumpBuff-dt); e.ghost=Math.max(0,e.ghost-dt); e.slowField=Math.max(0,e.slowField-dt); e.tagInvuln=Math.max(0,e.tagInvuln-dt);
         if(e.deadTime>0){ e.deadTime=Math.max(0,e.deadTime-dt); continue; }
@@ -3545,7 +3570,7 @@ btnProfile.addEventListener("click", ()=>{ refreshProfileUI(); });
       }
       handleContacts(dt);
       for(const e of entities){ if(e.deadTime>0) continue; hazardHit(e); applySafePads(e,dt); if(e.kind==='player' || e.kind==='player2'){ const tr = cosmetics.trail||'default'; if(tr==='default') spawnTrail(e,'rgba(120,255,255,0.22)'); if(tr==='spark') spawnTrail(e,'rgba(255,255,255,0.35)'); if(tr==='flame') spawnTrail(e,'rgba(255,140,80,0.35)'); } physicsStep(e,dt); e.t += dt; }
-      if(particles.length > 120) particles.length = 120; for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.vx*=0.96; p.vy*=0.96; p.life-=1; if(p.life<=0) particles.splice(i,1); }
+      if(particles.length > 60) particles.length = 60; for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.vx*=0.96; p.vy*=0.96; p.life-=1; if(p.life<=0) particles.splice(i,1); }
       if(state.gameMode==='BOMB'){ state.bombTime -= dt; if(state.bombTime<=0 && state.bombHolder>=0) explodeBomb(state.bombHolder); if(countAlive()<=1){ const youAlive = entities[playerId] && entities[playerId].deadTime<=0; endRound(youAlive, youAlive ? 'LAST STANDING!\nVote next map (1/2/3)' : 'Eliminated.\nVote next map (1/2/3)'); } }
       if(state.gameMode==='INFECTION'){ if(countSurvivorsNotInfected()<=0){ const youInf = entities[playerId]?.infected; endRound(!youInf, youInf ? 'Everyone got infected.\nYou were infected.' : 'Everyone got infected.\nYou survived!'); } }
       if(state.gameMode==='FREEZER'){ state.timeLeft -= dt; if(state.timeLeft<=0){ const you=entities[playerId]; const win = you && you.deadTime<=0 && you.frozenTime<=0; endRound(!!win, win ? 'TIME!\nYou stayed unfrozen.' : 'TIME!\nYou were frozen.'); } }
