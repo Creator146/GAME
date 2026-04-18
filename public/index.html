@@ -175,6 +175,8 @@ NEON MODES - MEGA BUILD (TAG UPGRADED) — FIXED FULL FILE
       background:rgba(255,255,255,0.06);
       border:1px solid rgba(255,255,255,0.12);
       box-shadow: 0 0 28px rgba(120,255,255,0.12);
+      pointer-events:auto;
+      touch-action:none;
     }
     #joyStick{
       position:absolute;
@@ -185,6 +187,8 @@ NEON MODES - MEGA BUILD (TAG UPGRADED) — FIXED FULL FILE
       border:1px solid rgba(120,255,255,0.25);
       box-shadow: 0 0 22px rgba(120,255,255,0.18);
       transform: translate(38px, 38px);
+      pointer-events:auto;
+      touch-action:none;
     }
     .mBtn{
       position:absolute;
@@ -197,13 +201,10 @@ NEON MODES - MEGA BUILD (TAG UPGRADED) — FIXED FULL FILE
       color:white; font-family:Arial; font-weight:800;
       text-shadow:0 0 18px rgba(255,255,255,0.25);
       pointer-events:auto;
+      touch-action:none;
     }
-    #btnJump{
-      bottom:calc(20px + env(safe-area-inset-bottom, 0px) + 24px);
-    }
-    #btnDash{
-      bottom:calc(120px + env(safe-area-inset-bottom, 0px) + 24px);
-    }
+    #btnJump{ bottom:calc(20px + env(safe-area-inset-bottom, 0px) + 24px); }
+    #btnDash{ bottom:calc(120px + env(safe-area-inset-bottom, 0px) + 24px); }
     #btnJump span, #btnDash span{ font-size:15px; opacity:0.95; }
     @media (max-width: 520px){
       .mBtn{ width:82px; height:82px; }
@@ -1113,15 +1114,40 @@ if(isMobile){
     setJoyVisual();
   });
 
+  const pressJump = (e)=>{
+    jumpPressed = true;
+    jumpHeld = true;
+    touchBtn.jump = true;
+    e.preventDefault();
+  };
+  const releaseJump = (e)=>{
+    jumpHeld = false;
+    touchBtn.jump = false;
+    touchBtn.jumpId = null;
+    e.preventDefault();
+  };
+  const pressDash = (e)=>{
+    dashPressed = true;
+    touchBtn.dash = true;
+    e.preventDefault();
+  };
+  const releaseDash = (e)=>{
+    touchBtn.dash = false;
+    touchBtn.dashId = null;
+    e.preventDefault();
+  };
+
+  btnJump.addEventListener("touchstart", pressJump, {passive:false});
+  btnJump.addEventListener("touchend", releaseJump, {passive:false});
+  btnJump.addEventListener("touchcancel", releaseJump, {passive:false});
+
+  btnDash.addEventListener("touchstart", pressDash, {passive:false});
+  btnDash.addEventListener("touchend", releaseDash, {passive:false});
+  btnDash.addEventListener("touchcancel", releaseDash, {passive:false});
+
   canvas.addEventListener("touchstart",(e)=>{
     for(const t of e.changedTouches){
       const x=t.clientX, y=t.clientY;
-      if(pointInRect(x,y, btnJump) && !touchBtn.jump){
-        touchBtn.jump=true; touchBtn.jumpId=t.identifier; jumpPressed=true; jumpHeld=true; continue;
-      }
-      if(pointInRect(x,y, btnDash) && !touchBtn.dash){
-        touchBtn.dash=true; touchBtn.dashId=t.identifier; dashPressed=true; continue;
-      }
       if(x < innerWidth*0.55 && !joy.active){
         joy.active=true; joy.id=t.identifier; joy.x=0; joy.y=0; joy.ax=0; setJoyVisual();
       }
@@ -1145,8 +1171,6 @@ if(isMobile){
   canvas.addEventListener("touchend",(e)=>{
     for(const t of e.changedTouches){
       if(t.identifier===joy.id){ joy.active=false; joy.id=null; joy.x=0; joy.y=0; joy.ax=0; setJoyVisual(); }
-      if(t.identifier===touchBtn.jumpId){ touchBtn.jump=false; touchBtn.jumpId=null; jumpHeld=false; }
-      if(t.identifier===touchBtn.dashId){ touchBtn.dash=false; touchBtn.dashId=null; }
     }
     e.preventDefault();
   },{passive:false});
@@ -1375,9 +1399,19 @@ function spawnBurst(x,y,n,color){
   }
 }
 function spawnTrail(ent,color){
-  if(Math.random() > settings.particles) return;
-  if(Math.random()<0.60) return;
-  particles.push({ x:ent.x+ent.w/2, y:ent.y+ent.h*0.78, vx:(Math.random()-0.5)*1.2, vy:1.2+Math.random()*2.0, life:22+Math.random()*10, size:3, color });
+  if(settings.low) return;
+  if(ent.kind !== "player" && ent.kind !== "player2") return;
+  if(particles.length > 120) return;
+  if(Math.random() > Math.max(0.12, settings.particles*0.35)) return;
+  particles.push({
+    x:ent.x+ent.w/2,
+    y:ent.y+ent.h*0.78,
+    vx:(Math.random()-0.5)*0.8,
+    vy:0.8+Math.random()*1.2,
+    life:10+Math.random()*6,
+    size:2,
+    color
+  });
 }
 </script>
 
@@ -2729,6 +2763,10 @@ function endRound(win, reason){
   menu.style.display="flex";
   state.paused=false;
   pauseModal.style.display="none";
+  state.zoneActive = false;
+  state.spinning = false;
+  state.roundEndedAt = Date.now();
+  particles.length = Math.min(particles.length, 60);
 
   progress.totalMatches++;
   addXP(win ? 70 : 28);
@@ -2842,7 +2880,7 @@ function loop(){
     updateTagZone(dt);
 
     // spawn occasional powerups
-    if(Math.random() < dt*0.08 && powerups.length < (settings.low?2:4)) spawnPowerup();
+    if(Math.random() < dt*0.03 && powerups.length < (settings.low?1:2)) spawnPowerup();
 
     // update entities input/ai
     for(let i=0;i<entities.length;i++){
@@ -2878,10 +2916,12 @@ function loop(){
       applySafePads(e, dt);
 
       // trail cosmetics
-      const tr = cosmetics.trail || "default";
-      if(tr==="default") spawnTrail(e, "rgba(120,255,255,0.22)");
-      if(tr==="spark")   spawnTrail(e, "rgba(255,255,255,0.35)");
-      if(tr==="flame")   spawnTrail(e, "rgba(255,140,80,0.35)");
+      if(e.kind==="player" || e.kind==="player2"){
+        const tr = cosmetics.trail || "default";
+        if(tr==="default") spawnTrail(e, "rgba(120,255,255,0.22)");
+        if(tr==="spark")   spawnTrail(e, "rgba(255,255,255,0.35)");
+        if(tr==="flame")   spawnTrail(e, "rgba(255,140,80,0.35)");
+      }
 
       physicsStep(e, dt);
       e.t += dt;
@@ -3343,7 +3383,7 @@ btnProfile.addEventListener("click", ()=>{ refreshProfileUI(); });
     updateHazards(dt);
     applySlowAuras(dt);
     updateTagZone(dt);
-    if(Math.random() < dt*0.08 && powerups.length < (settings.low?2:4)) spawnPowerup();
+    if(Math.random() < dt*0.03 && powerups.length < (settings.low?1:2)) spawnPowerup();
 
     for(let i=0;i<entities.length;i++){
       const e=entities[i];
@@ -3467,7 +3507,7 @@ btnProfile.addEventListener("click", ()=>{ refreshProfileUI(); });
     }else if(state.mode==='playing' && !state.paused){
       // original offline sim
       updateHazards(dt); applySlowAuras(dt); updateTagZone(dt);
-      if(Math.random() < dt*0.08 && powerups.length < (settings.low?2:4)) spawnPowerup();
+      if(Math.random() < dt*0.03 && powerups.length < (settings.low?1:2)) spawnPowerup();
       for(let i=0;i<entities.length;i++){
         const e=entities[i]; e.speedBuff=Math.max(0,e.speedBuff-dt); e.jumpBuff=Math.max(0,e.jumpBuff-dt); e.ghost=Math.max(0,e.ghost-dt); e.slowField=Math.max(0,e.slowField-dt); e.tagInvuln=Math.max(0,e.tagInvuln-dt);
         if(e.deadTime>0){ e.deadTime=Math.max(0,e.deadTime-dt); continue; }
@@ -3476,8 +3516,8 @@ btnProfile.addEventListener("click", ()=>{ refreshProfileUI(); });
         else updateBotAI(e,i,dt);
       }
       handleContacts(dt);
-      for(const e of entities){ if(e.deadTime>0) continue; hazardHit(e); applySafePads(e,dt); const tr = cosmetics.trail||'default'; if(tr==='default') spawnTrail(e,'rgba(120,255,255,0.22)'); if(tr==='spark') spawnTrail(e,'rgba(255,255,255,0.35)'); if(tr==='flame') spawnTrail(e,'rgba(255,140,80,0.35)'); physicsStep(e,dt); e.t += dt; }
-      for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.vx*=0.96; p.vy*=0.96; p.life-=1; if(p.life<=0) particles.splice(i,1); }
+      for(const e of entities){ if(e.deadTime>0) continue; hazardHit(e); applySafePads(e,dt); if(e.kind==='player' || e.kind==='player2'){ const tr = cosmetics.trail||'default'; if(tr==='default') spawnTrail(e,'rgba(120,255,255,0.22)'); if(tr==='spark') spawnTrail(e,'rgba(255,255,255,0.35)'); if(tr==='flame') spawnTrail(e,'rgba(255,140,80,0.35)'); } physicsStep(e,dt); e.t += dt; }
+      if(particles.length > 120) particles.length = 120; for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.vx*=0.96; p.vy*=0.96; p.life-=1; if(p.life<=0) particles.splice(i,1); }
       if(state.gameMode==='BOMB'){ state.bombTime -= dt; if(state.bombTime<=0 && state.bombHolder>=0) explodeBomb(state.bombHolder); if(countAlive()<=1){ const youAlive = entities[playerId] && entities[playerId].deadTime<=0; endRound(youAlive, youAlive ? 'LAST STANDING!\nVote next map (1/2/3)' : 'Eliminated.\nVote next map (1/2/3)'); } }
       if(state.gameMode==='INFECTION'){ if(countSurvivorsNotInfected()<=0){ const youInf = entities[playerId]?.infected; endRound(!youInf, youInf ? 'Everyone got infected.\nYou were infected.' : 'Everyone got infected.\nYou survived!'); } }
       if(state.gameMode==='FREEZER'){ state.timeLeft -= dt; if(state.timeLeft<=0){ const you=entities[playerId]; const win = you && you.deadTime<=0 && you.frozenTime<=0; endRound(!!win, win ? 'TIME!\nYou stayed unfrozen.' : 'TIME!\nYou were frozen.'); } }
