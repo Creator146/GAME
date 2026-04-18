@@ -211,6 +211,7 @@ NEON MODES - MEGA BUILD (TAG UPGRADED) — FIXED FULL FILE
       #btnDash{ bottom:calc(112px + env(safe-area-inset-bottom, 0px) + 34px); }
     }
   </style>
+  <link rel="icon" href="data:,">
 </head>
 
 <!-- CHUNK 2 / 11 -->
@@ -1064,8 +1065,9 @@ function checkDaily(winThisMatch, tagsThisMatch){
 // ============================
 // INPUT (P1 + optional P2) + MOBILE
 // ============================
-const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+window.isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
   (navigator.maxTouchPoints > 0 && window.innerWidth <= 1024);
+const isMobile = !!window.isMobile;
 touchUI.style.display = "block";
 
 const keys = {};
@@ -1225,7 +1227,7 @@ function axisP1(){
   const left = keys["a"]||keys["arrowleft"];
   const right = keys["d"]||keys["arrowright"];
   const keyAxis = (right?1:0) - (left?1:0);
-  const joyAxis = joy.active ? joy.ax : 0;
+  const joyAxis = (typeof joy !== "undefined" && joy && joy.active) ? joy.ax : 0;
   if(Math.abs(keyAxis) > 0) return keyAxis;
   return joyAxis;
 }
@@ -3385,10 +3387,11 @@ btnProfile.addEventListener("click", ()=>{ refreshProfileUI(); });
     if(online.inputTimer < 1/30) return;
     online.inputTimer = 0;
     const input = {
-      ax: isMobile ? joy.ax : axisP1(),
+      ax: axisP1(),
       jumpPressed: !!jumpPressed,
       jumpHeld: !!jumpHeld,
-      dashPressed: !!dashPressed
+      dashPressed: !!dashPressed,
+      mobile: !!window.isMobile
     };
     const sig = JSON.stringify(input);
     if(sig !== online.lastInputSent || Math.random()<0.1){
