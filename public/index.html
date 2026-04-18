@@ -165,16 +165,21 @@ NEON MODES - MEGA BUILD (TAG UPGRADED) — FIXED FULL FILE
     #touchUI{
       position:fixed; inset:0; pointer-events:none;
       z-index: 10; display:none;
+      padding-bottom: env(safe-area-inset-bottom, 0px);
     }
     #joyBase{
-      position:absolute; left:18px; bottom:18px;
+      position:absolute;
+      left:max(18px, env(safe-area-inset-left, 0px));
+      bottom:calc(18px + env(safe-area-inset-bottom, 0px) + 20px);
       width:140px; height:140px; border-radius:999px;
       background:rgba(255,255,255,0.06);
       border:1px solid rgba(255,255,255,0.12);
       box-shadow: 0 0 28px rgba(120,255,255,0.12);
     }
     #joyStick{
-      position:absolute; left:18px; bottom:18px;
+      position:absolute;
+      left:max(18px, env(safe-area-inset-left, 0px));
+      bottom:calc(18px + env(safe-area-inset-bottom, 0px) + 20px);
       width:64px; height:64px; border-radius:999px;
       background:rgba(120,255,255,0.18);
       border:1px solid rgba(120,255,255,0.25);
@@ -182,18 +187,29 @@ NEON MODES - MEGA BUILD (TAG UPGRADED) — FIXED FULL FILE
       transform: translate(38px, 38px);
     }
     .mBtn{
-      position:absolute; right:18px;
-      width:92px; height:92px; border-radius:999px;
-      background:rgba(255,255,255,0.06);
-      border:1px solid rgba(255,255,255,0.12);
+      position:absolute;
+      right:max(18px, env(safe-area-inset-right, 0px));
+      width:88px; height:88px; border-radius:999px;
+      background:rgba(255,255,255,0.08);
+      border:1px solid rgba(255,255,255,0.14);
       box-shadow: 0 0 28px rgba(255,80,220,0.10);
       display:flex; align-items:center; justify-content:center;
       color:white; font-family:Arial; font-weight:800;
       text-shadow:0 0 18px rgba(255,255,255,0.25);
+      pointer-events:auto;
     }
-    #btnJump{ bottom:28px; }
-    #btnDash{ bottom:132px; }
-    #btnJump span, #btnDash span{ font-size:16px; opacity:0.9; }
+    #btnJump{
+      bottom:calc(20px + env(safe-area-inset-bottom, 0px) + 24px);
+    }
+    #btnDash{
+      bottom:calc(120px + env(safe-area-inset-bottom, 0px) + 24px);
+    }
+    #btnJump span, #btnDash span{ font-size:15px; opacity:0.95; }
+    @media (max-width: 520px){
+      .mBtn{ width:82px; height:82px; }
+      #btnJump{ bottom:calc(18px + env(safe-area-inset-bottom, 0px) + 34px); }
+      #btnDash{ bottom:calc(112px + env(safe-area-inset-bottom, 0px) + 34px); }
+    }
   </style>
 </head>
 
