@@ -11,10 +11,12 @@ NEON MODES - MEGA BUILD (TAG UPGRADED) — FIXED FULL FILE
 <html>
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Neon Modes - MEGA BUILD (TAG UPGRADED)</title>
   <style>
-    body{ margin:0; overflow:hidden; background:#050611; touch-action:none; }
-    canvas{ display:block; }
+    html, body{ margin:0; width:100%; height:100%; overflow:hidden; background:#050611; touch-action:none; }
+    body{ position:fixed; inset:0; }
+    canvas{ display:block; width:100%; height:100%; }
 
     #hud{
       position:fixed; left:12px; top:12px;
@@ -175,9 +177,7 @@ NEON MODES - MEGA BUILD (TAG UPGRADED) — FIXED FULL FILE
       background:rgba(255,255,255,0.06);
       border:1px solid rgba(255,255,255,0.12);
       box-shadow: 0 0 28px rgba(120,255,255,0.12);
-      pointer-events:auto;
-      touch-action:none;
-      user-select:none;
+      pointer-events:auto; touch-action:none;
     }
     #joyStick{
       position:absolute;
@@ -189,8 +189,6 @@ NEON MODES - MEGA BUILD (TAG UPGRADED) — FIXED FULL FILE
       box-shadow: 0 0 22px rgba(120,255,255,0.18);
       transform: translate(38px, 38px);
       pointer-events:none;
-      touch-action:none;
-      user-select:none;
     }
     .mBtn{
       position:absolute;
@@ -202,9 +200,7 @@ NEON MODES - MEGA BUILD (TAG UPGRADED) — FIXED FULL FILE
       display:flex; align-items:center; justify-content:center;
       color:white; font-family:Arial; font-weight:800;
       text-shadow:0 0 18px rgba(255,255,255,0.25);
-      pointer-events:auto;
-      touch-action:none;
-      user-select:none;
+      pointer-events:auto; touch-action:none;
     }
     #btnJump{ bottom:calc(20px + env(safe-area-inset-bottom, 0px) + 24px); }
     #btnDash{ bottom:calc(120px + env(safe-area-inset-bottom, 0px) + 24px); }
@@ -459,8 +455,18 @@ const joyStick = document.getElementById("joyStick");
 const btnJump = document.getElementById("btnJump");
 const btnDash = document.getElementById("btnDash");
 
-function resize(){ canvas.width = innerWidth; canvas.height = innerHeight; }
+function resize(){
+  const vv = window.visualViewport;
+  const w = Math.max(320, Math.floor(vv ? vv.width : window.innerWidth));
+  const h = Math.max(320, Math.floor(vv ? vv.height : window.innerHeight));
+  canvas.width = w;
+  canvas.height = h;
+  canvas.style.width = w + "px";
+  canvas.style.height = h + "px";
+}
 addEventListener("resize", resize);
+addEventListener("orientationchange", ()=>setTimeout(resize, 120));
+if(window.visualViewport) visualViewport.addEventListener("resize", resize);
 resize();
 
 canvas.addEventListener("pointerdown", async ()=>{
@@ -1056,10 +1062,11 @@ function checkDaily(winThisMatch, tagsThisMatch){
 <!-- CHUNK 6 / 11 -->
 <script>
 // ============================
-// INPUT (P1 + optional P2) + MOBILE / DESKTOP JOYSTICK
+// INPUT (P1 + optional P2) + MOBILE
 // ============================
-const showTouchUI = true;
-touchUI.style.display = showTouchUI ? "block" : "none";
+const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+  (navigator.maxTouchPoints > 0 && window.innerWidth <= 1024);
+touchUI.style.display = "block";
 
 const keys = {};
 let jumpPressed=false, dashPressed=false, jumpHeld=false;
@@ -1085,9 +1092,14 @@ addEventListener("keyup",(e)=>{
 });
 
 // joystick
-const joy = { active:false, pointerId:null, baseX:0, baseY:0, x:0, y:0, ax:0 };
+const joy = { active:false, id:null, baseX:0, baseY:0, x:0, y:0, ax:0, pointerId:null };
+const touchBtn = { jump:false, dash:false, jumpId:null, dashId:null };
 
-function setJoyBaseCenter(){
+function pointInRect(px,py, el){
+  const r = el.getBoundingClientRect();
+  return px>=r.left && px<=r.right && py>=r.top && py<=r.bottom;
+}
+function recalcJoyBase(){
   const r = joyBase.getBoundingClientRect();
   joy.baseX = r.left + r.width/2;
   joy.baseY = r.top + r.height/2;
@@ -1102,86 +1114,126 @@ function setJoyVisual(){
   joyStick.style.transform = `translate(${(cx - 32 - baseRect.left) + ox}px, ${(cy - 32 - baseRect.top) + oy}px)`;
 }
 function resetJoy(){
-  joy.active = false;
-  joy.pointerId = null;
-  joy.x = 0;
-  joy.y = 0;
-  joy.ax = 0;
-  setJoyVisual();
+  joy.active=false; joy.id=null; joy.pointerId=null; joy.x=0; joy.y=0; joy.ax=0; setJoyVisual();
 }
-function startJoyFromPointer(e){
+setTimeout(()=>{ recalcJoyBase(); setJoyVisual(); }, 50);
+addEventListener("resize", ()=>{ recalcJoyBase(); setJoyVisual(); });
+addEventListener("orientationchange", ()=>setTimeout(()=>{ recalcJoyBase(); setJoyVisual(); }, 120));
+
+function startJoyAt(clientX, clientY, pointerId=null){
+  recalcJoyBase();
   joy.active = true;
-  joy.pointerId = e.pointerId;
-  updateJoyFromPointer(e);
-}
-function updateJoyFromPointer(e){
-  if(!joy.active || e.pointerId !== joy.pointerId) return;
-  const dx = e.clientX - joy.baseX;
-  const dy = e.clientY - joy.baseY;
+  joy.pointerId = pointerId;
+  joy.id = pointerId;
+  const dx = clientX - joy.baseX;
+  joy.x = dx;
+  joy.y = 0;
   const maxR = joyBase.getBoundingClientRect().width * 0.35;
-  joy.x = clamp(dx, -maxR, maxR);
-  joy.y = clamp(dy, -maxR, maxR);
-  joy.ax = clamp((joy.x / maxR) * settings.joySens, -1, 1);
+  joy.ax = clamp((dx / maxR) * settings.joySens, -1, 1);
+  setJoyVisual();
+}
+function moveJoyAt(clientX){
+  if(!joy.active) return;
+  const dx = clientX - joy.baseX;
+  joy.x = dx;
+  const maxR = joyBase.getBoundingClientRect().width * 0.35;
+  joy.ax = clamp((dx / maxR) * settings.joySens, -1, 1);
   setJoyVisual();
 }
 
-setTimeout(()=>{ setJoyBaseCenter(); setJoyVisual(); }, 50);
-addEventListener("resize", ()=>{ setJoyBaseCenter(); setJoyVisual(); });
+// direct button listeners
+function pressJump(e){ jumpPressed = true; jumpHeld = true; e.preventDefault(); }
+function releaseJump(e){ jumpHeld = false; e.preventDefault(); }
+function pressDash(e){ dashPressed = true; e.preventDefault(); }
 
-joyBase.addEventListener("pointerdown",(e)=>{
-  setJoyBaseCenter();
-  joyBase.setPointerCapture?.(e.pointerId);
-  startJoyFromPointer(e);
-  e.preventDefault();
-});
-joyBase.addEventListener("pointermove",(e)=>{
-  updateJoyFromPointer(e);
-  e.preventDefault();
-});
-joyBase.addEventListener("pointerup",(e)=>{
-  if(e.pointerId === joy.pointerId) resetJoy();
-  e.preventDefault();
-});
-joyBase.addEventListener("pointercancel",(e)=>{
-  if(e.pointerId === joy.pointerId) resetJoy();
-  e.preventDefault();
-});
+btnJump.addEventListener("touchstart", pressJump, { passive:false });
+btnJump.addEventListener("touchend", releaseJump, { passive:false });
+btnJump.addEventListener("touchcancel", releaseJump, { passive:false });
+btnDash.addEventListener("touchstart", pressDash, { passive:false });
+btnDash.addEventListener("touchend", (e)=>e.preventDefault(), { passive:false });
+btnDash.addEventListener("touchcancel", (e)=>e.preventDefault(), { passive:false });
 
-btnJump.addEventListener("pointerdown",(e)=>{
-  jumpPressed = true;
-  jumpHeld = true;
-  btnJump.setPointerCapture?.(e.pointerId);
-  e.preventDefault();
-});
-btnJump.addEventListener("pointerup",(e)=>{
-  jumpHeld = false;
-  e.preventDefault();
-});
-btnJump.addEventListener("pointercancel",(e)=>{
-  jumpHeld = false;
-  e.preventDefault();
-});
+btnJump.addEventListener("pointerdown", pressJump);
+btnJump.addEventListener("pointerup", releaseJump);
+btnJump.addEventListener("pointercancel", releaseJump);
+btnDash.addEventListener("pointerdown", pressDash);
 
-btnDash.addEventListener("pointerdown",(e)=>{
-  dashPressed = true;
-  btnDash.setPointerCapture?.(e.pointerId);
+joyBase.addEventListener("pointerdown", (e)=>{
+  startJoyAt(e.clientX, e.clientY, e.pointerId);
   e.preventDefault();
 });
-btnDash.addEventListener("pointerup",(e)=>{ e.preventDefault(); });
-btnDash.addEventListener("pointercancel",(e)=>{ e.preventDefault(); });
+window.addEventListener("pointermove", (e)=>{
+  if(joy.active && joy.pointerId === e.pointerId){
+    moveJoyAt(e.clientX);
+    e.preventDefault();
+  }
+}, { passive:false });
+window.addEventListener("pointerup", (e)=>{
+  if(joy.active && joy.pointerId === e.pointerId){
+    resetJoy();
+    e.preventDefault();
+  }
+}, { passive:false });
+window.addEventListener("pointercancel", (e)=>{
+  if(joy.active && joy.pointerId === e.pointerId){
+    resetJoy();
+    e.preventDefault();
+  }
+}, { passive:false });
+
+if(isMobile){
+  canvas.addEventListener("touchstart",(e)=>{
+    for(const t of e.changedTouches){
+      const x=t.clientX, y=t.clientY;
+      if(pointInRect(x,y, btnJump) || pointInRect(x,y, btnDash)) continue;
+      if(x < innerWidth*0.55 && !joy.active){
+        joy.active=true; joy.id=t.identifier; joy.pointerId=t.identifier; joy.x=0; joy.y=0; joy.ax=0;
+        recalcJoyBase();
+        moveJoyAt(x);
+      }
+    }
+    e.preventDefault();
+  },{passive:false});
+
+  canvas.addEventListener("touchmove",(e)=>{
+    for(const t of e.changedTouches){
+      if(joy.active && t.identifier===joy.id){
+        moveJoyAt(t.clientX);
+      }
+    }
+    e.preventDefault();
+  },{passive:false});
+
+  canvas.addEventListener("touchend",(e)=>{
+    for(const t of e.changedTouches){
+      if(t.identifier===joy.id){ resetJoy(); }
+      if(t.identifier===touchBtn.jumpId){ touchBtn.jump=false; touchBtn.jumpId=null; jumpHeld=false; }
+      if(t.identifier===touchBtn.dashId){ touchBtn.dash=false; touchBtn.dashId=null; }
+    }
+    e.preventDefault();
+  },{passive:false});
+
+  canvas.addEventListener("touchcancel",(e)=>{
+    resetJoy();
+    touchBtn.jump=false; touchBtn.jumpId=null; jumpHeld=false;
+    touchBtn.dash=false; touchBtn.dashId=null;
+    e.preventDefault();
+  },{passive:false});
+}
 
 function axisP1(){
   const left = keys["a"]||keys["arrowleft"];
   const right = keys["d"]||keys["arrowright"];
   const keyAxis = (right?1:0) - (left?1:0);
-  return keyAxis !== 0 ? keyAxis : joy.ax;
+  const joyAxis = joy.active ? joy.ax : 0;
+  if(Math.abs(keyAxis) > 0) return keyAxis;
+  return joyAxis;
 }
 function axisP2(){
   const left = keys["j"];
   const right = keys["l"];
   return (right?1:0) - (left?1:0);
-}
-</script>
+}</script>
 
 <!-- CHUNK 7 / 11 -->
 <script>
@@ -1361,9 +1413,8 @@ let player2Id=-1;
 
 const cam = { x:0, y:0, shake:0 };
 function updateCamera(){
-  if(entities.length===0) return;
+  if(!entities || !entities[playerId]) return;
   const p = entities[playerId];
-  if(!p) return;
   const cx = p.x+p.w/2 - canvas.width/2;
   const cy = p.y+p.h/2 - canvas.height/2;
   cam.x = clamp(cx, 0, Math.max(0, world.w - canvas.width));
@@ -1385,9 +1436,10 @@ function spawnBurst(x,y,n,color){
   }
 }
 function spawnTrail(ent,color){
+  if(settings.low) return;
   if(Math.random() > settings.particles) return;
-  if(Math.random()<0.60) return;
-  particles.push({ x:ent.x+ent.w/2, y:ent.y+ent.h*0.78, vx:(Math.random()-0.5)*1.2, vy:1.2+Math.random()*2.0, life:22+Math.random()*10, size:3, color });
+  if(Math.random() < 0.92) return;
+  particles.push({ x:ent.x+ent.w/2, y:ent.y+ent.h*0.78, vx:(Math.random()-0.5)*0.8, vy:0.8+Math.random()*1.2, life:10+Math.random()*6, size:2, color });
 }
 </script>
 
@@ -2852,7 +2904,7 @@ function loop(){
     updateTagZone(dt);
 
     // spawn occasional powerups
-    if(Math.random() < dt*0.08 && powerups.length < (settings.low?2:4)) spawnPowerup();
+    if(Math.random() < dt*0.03 && powerups.length < (settings.low?1:2)) spawnPowerup();
 
     // update entities input/ai
     for(let i=0;i<entities.length;i++){
@@ -3353,7 +3405,7 @@ btnProfile.addEventListener("click", ()=>{ refreshProfileUI(); });
     updateHazards(dt);
     applySlowAuras(dt);
     updateTagZone(dt);
-    if(Math.random() < dt*0.08 && powerups.length < (settings.low?2:4)) spawnPowerup();
+    if(Math.random() < dt*0.03 && powerups.length < (settings.low?1:2)) spawnPowerup();
 
     for(let i=0;i<entities.length;i++){
       const e=entities[i];
@@ -3381,13 +3433,16 @@ btnProfile.addEventListener("click", ()=>{ refreshProfileUI(); });
       if(e.deadTime>0) continue;
       hazardHit(e);
       applySafePads(e, dt);
-      const tr = (e.netOwner===online.myId ? (cosmetics.trail||'default') : 'default');
-      if(tr==='default') spawnTrail(e, 'rgba(120,255,255,0.22)');
-      if(tr==='spark')   spawnTrail(e, 'rgba(255,255,255,0.35)');
-      if(tr==='flame')   spawnTrail(e, 'rgba(255,140,80,0.35)');
+      if(e.kind==='player' || e.kind==='remote' || e.kind==='player2'){
+        const tr = (e.netOwner===online.myId ? (cosmetics.trail||'default') : 'default');
+        if(tr==='default') spawnTrail(e, 'rgba(120,255,255,0.22)');
+        if(tr==='spark')   spawnTrail(e, 'rgba(255,255,255,0.35)');
+        if(tr==='flame')   spawnTrail(e, 'rgba(255,140,80,0.35)');
+      }
       physicsStep(e, dt);
       e.t += dt;
     }
+    if(particles.length > 120) particles.length = 120;
     for(let i=particles.length-1;i>=0;i--){
       const p=particles[i]; p.x += p.vx; p.y += p.vy; p.vx *= 0.96; p.vy *= 0.96; p.life -= 1; if(p.life<=0) particles.splice(i,1);
     }
@@ -3477,7 +3532,7 @@ btnProfile.addEventListener("click", ()=>{ refreshProfileUI(); });
     }else if(state.mode==='playing' && !state.paused){
       // original offline sim
       updateHazards(dt); applySlowAuras(dt); updateTagZone(dt);
-      if(Math.random() < dt*0.08 && powerups.length < (settings.low?2:4)) spawnPowerup();
+      if(Math.random() < dt*0.03 && powerups.length < (settings.low?1:2)) spawnPowerup();
       for(let i=0;i<entities.length;i++){
         const e=entities[i]; e.speedBuff=Math.max(0,e.speedBuff-dt); e.jumpBuff=Math.max(0,e.jumpBuff-dt); e.ghost=Math.max(0,e.ghost-dt); e.slowField=Math.max(0,e.slowField-dt); e.tagInvuln=Math.max(0,e.tagInvuln-dt);
         if(e.deadTime>0){ e.deadTime=Math.max(0,e.deadTime-dt); continue; }
@@ -3486,8 +3541,8 @@ btnProfile.addEventListener("click", ()=>{ refreshProfileUI(); });
         else updateBotAI(e,i,dt);
       }
       handleContacts(dt);
-      for(const e of entities){ if(e.deadTime>0) continue; hazardHit(e); applySafePads(e,dt); const tr = cosmetics.trail||'default'; if(tr==='default') spawnTrail(e,'rgba(120,255,255,0.22)'); if(tr==='spark') spawnTrail(e,'rgba(255,255,255,0.35)'); if(tr==='flame') spawnTrail(e,'rgba(255,140,80,0.35)'); physicsStep(e,dt); e.t += dt; }
-      for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.vx*=0.96; p.vy*=0.96; p.life-=1; if(p.life<=0) particles.splice(i,1); }
+      for(const e of entities){ if(e.deadTime>0) continue; hazardHit(e); applySafePads(e,dt); if(e.kind==='player' || e.kind==='player2'){ const tr = cosmetics.trail||'default'; if(tr==='default') spawnTrail(e,'rgba(120,255,255,0.22)'); if(tr==='spark') spawnTrail(e,'rgba(255,255,255,0.35)'); if(tr==='flame') spawnTrail(e,'rgba(255,140,80,0.35)'); } physicsStep(e,dt); e.t += dt; }
+      if(particles.length > 120) particles.length = 120; for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.vx*=0.96; p.vy*=0.96; p.life-=1; if(p.life<=0) particles.splice(i,1); }
       if(state.gameMode==='BOMB'){ state.bombTime -= dt; if(state.bombTime<=0 && state.bombHolder>=0) explodeBomb(state.bombHolder); if(countAlive()<=1){ const youAlive = entities[playerId] && entities[playerId].deadTime<=0; endRound(youAlive, youAlive ? 'LAST STANDING!\nVote next map (1/2/3)' : 'Eliminated.\nVote next map (1/2/3)'); } }
       if(state.gameMode==='INFECTION'){ if(countSurvivorsNotInfected()<=0){ const youInf = entities[playerId]?.infected; endRound(!youInf, youInf ? 'Everyone got infected.\nYou were infected.' : 'Everyone got infected.\nYou survived!'); } }
       if(state.gameMode==='FREEZER'){ state.timeLeft -= dt; if(state.timeLeft<=0){ const you=entities[playerId]; const win = you && you.deadTime<=0 && you.frozenTime<=0; endRound(!!win, win ? 'TIME!\nYou stayed unfrozen.' : 'TIME!\nYou were frozen.'); } }
